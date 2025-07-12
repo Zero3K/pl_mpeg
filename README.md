@@ -64,6 +64,18 @@ https://phoboslab.org/files/bjork-all-is-full-of-love.mpg
 ## Limitations
 
 - no error reporting. PL_MPEG will silently ignore any invalid data.
+- **MP4 files are not supported**. This library only supports MPEG1 video and MP2 audio in MPEG-PS containers (.mpg files). MP4 files contain different codecs (typically H.264 video) and use a different container format.
 - the pts (presentation time stamp) for packets in the MPEG-PS container is
 ignored. This may cause sync issues with some files.
 - bugs, probably.
+
+
+## Converting MP4 to Supported Format
+
+If you have MP4 files (including those from Twitch.tv or other streaming platforms), you can convert them to the MPEG1 format supported by PL_MPEG:
+
+```shell
+ffmpeg -i input.mp4 -c:v mpeg1video -q:v 0 -c:a libtwolame -b:a 224k -format mpeg output.mpg
+```
+
+**Note**: This conversion will result in larger file sizes and lower compression efficiency compared to modern codecs like H.264, but provides compatibility with this lightweight decoder.

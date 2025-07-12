@@ -1,0 +1,22 @@
+# Build artifacts
+pl_mpeg_extract_frames
+pl_mpeg_player_sdl
+pl_mpeg_player_gl
+
+# Object files
+*.o
+*.obj
+
+# Debug files
+*.pdb
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
