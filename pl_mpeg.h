@@ -50,6 +50,11 @@ in an easy to use wrapper.
 Lower-level APIs for accessing the demuxer, video decoder and audio decoder, 
 as well as providing different data sources are also available.
 
+**IMPORTANT**: This library only supports MPEG1 video and MP2 audio in MPEG-PS 
+containers (.mpg files). MP4 files are NOT supported as they use different 
+codecs (typically H.264 video) and container format. If you try to use MP4 
+files, the library will detect this and provide conversion instructions.
+
 Interfaces are written in an object oriented style, meaning you create object 
 instances via various different constructor functions (plm_*create()),
 do some work on them and later dispose them via plm_*destroy().
@@ -1787,6 +1792,49 @@ static const int PLM_START_PACK = 0xBA;
 static const int PLM_START_END = 0xB9;
 static const int PLM_START_SYSTEM = 0xBB;
 
+// MP4 format detection
+int plm_demux_detect_mp4_format(plm_buffer_t *buffer) {
+	// Save current buffer position
+	size_t original_bit_index = buffer->bit_index;
+	
+	// Check if we have enough data for MP4 detection (at least 8 bytes for box header)
+	if (!plm_buffer_has(buffer, 64)) {
+		buffer->bit_index = original_bit_index;
+		return FALSE;
+	}
+	
+	// Read first 4 bytes (box size)
+	uint32_t box_size = (plm_buffer_read(buffer, 8) << 24) |
+	                    (plm_buffer_read(buffer, 8) << 16) |
+	                    (plm_buffer_read(buffer, 8) << 8) |
+	                    plm_buffer_read(buffer, 8);
+	
+	// Read next 4 bytes (box type) - should be "ftyp" for MP4
+	uint32_t box_type = (plm_buffer_read(buffer, 8) << 24) |
+	                    (plm_buffer_read(buffer, 8) << 16) |
+	                    (plm_buffer_read(buffer, 8) << 8) |
+	                    plm_buffer_read(buffer, 8);
+	
+	// Restore original buffer position
+	buffer->bit_index = original_bit_index;
+	
+	// Check for "ftyp" signature (0x66747970)
+	if (box_type == 0x66747970) {
+		return TRUE;
+	}
+	
+	// Also check for other common MP4 box types that might appear first
+	// "moov" (0x6D6F6F76), "mdat" (0x6D646174), "free" (0x66726565), "skip" (0x736B6970)
+	// "wide" (0x77696465), "uuid" (0x75756964), "styp" (0x73747970)
+	if (box_type == 0x6D6F6F76 || box_type == 0x6D646174 || box_type == 0x66726565 || 
+	    box_type == 0x736B6970 || box_type == 0x77696465 || box_type == 0x75756964 ||
+	    box_type == 0x73747970) {
+		return TRUE;
+	}
+	
+	return FALSE;
+}
+
 struct plm_demux_t {
 	plm_buffer_t *buffer;
 	int destroy_buffer_when_done;
@@ -1801,6 +1849,7 @@ struct plm_demux_t {
 	int has_pack_header;
 	int has_system_header;
 	int has_headers;
+	int mp4_warning_shown;  // Flag to prevent repeated MP4 warnings
 
 	int num_audio_streams;
 	int num_video_streams;
@@ -1839,6 +1888,18 @@ void plm_demux_destroy(plm_demux_t *self) {
 int plm_demux_has_headers(plm_demux_t *self) {
 	if (self->has_headers) {
 		return TRUE;
+	}
+
+	// Check for MP4 format and provide helpful message
+	if (!self->mp4_warning_shown && plm_demux_detect_mp4_format(self->buffer)) {
+		self->mp4_warning_shown = TRUE;
+		#ifndef PLM_NO_STDIO
+		fprintf(stderr, "PL_MPEG: MP4 format detected, but this library only supports MPEG1 video/MP2 audio in MPEG-PS containers.\n");
+		fprintf(stderr, "To convert your MP4 file to a supported format, use:\n");
+		fprintf(stderr, "  ffmpeg -i input.mp4 -c:v mpeg1video -q:v 0 -c:a libtwolame -b:a 224k -format mpeg output.mpg\n");
+		fprintf(stderr, "See PL_MPEG documentation for more details.\n");
+		#endif
+		return FALSE;
 	}
 
 	// Decode pack header
